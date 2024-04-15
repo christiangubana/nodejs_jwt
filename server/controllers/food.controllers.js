@@ -28,9 +28,9 @@ exports.addFood = (req, res, next) => {
         .json({ message: "Image upload failed", error: err });
     }
     try {
-      const { title, description } = req.body;
+      const { title, quantity, description } = req.body;
       const image = req.file ? req.file.path.replace('\\', '/') : '';
-      const food = new Food({ title, description, image });
+      const food = new Food({ title, quantity, description, image });
       await food.save();
       res.status(201).json({ message: "Food item added successfully", food });
     } catch (error) {
@@ -48,8 +48,8 @@ exports.updateFood = (req, res, next) => {
     }
     try {
       const { id } = req.params;
-      const { title, description } = req.body;
-      let updatedFoodData = { title, description };
+      const { title, quantity, description } = req.body;
+      let updatedFoodData = { title, quantity, description };
       if (req.file) {
         updatedFoodData.image = req.file.path; 
       }
@@ -77,6 +77,19 @@ exports.deleteFood = async (req, res, next) => {
       return res.status(404).json({ message: "Food item not found" });
     }
     res.json({ message: "Food item deleted successfully" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getFoodById = async (req, res, next) => {
+  try {
+    const { itemId } = req.params;
+    const food = await Food.findById(itemId);
+    if (!food) {
+      return res.status(404).json({ message: "Food item not found" });
+    }
+    res.json(food);
   } catch (error) {
     next(error);
   }

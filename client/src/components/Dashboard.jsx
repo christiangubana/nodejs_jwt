@@ -1,48 +1,40 @@
-import React, { useState, useEffect } from "react";
-import useAuth from "../hooks/useAuth";
-import AddFoodForm from "./AddFoodForm";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEdit, faTrash } from "@fortawesome/free-solid-svg-icons";
-import { toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import { toast } from "react-toastify";
+import { useNavigate } from "react-router-dom";
+import Chart from "chart.js/auto";
+import useAuth from "../hooks/useAuth";
 
-const Dashboard = ({ isLoggedIn }) => {
-  useAuth(isLoggedIn);
-
+const Dashboard = () => {
   const [foods, setFoods] = useState([]);
-  const [editingFood, setEditingFood] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const token = localStorage.getItem("token"); // Retrieve token from localStorage
+  const chartRef = useRef(null);
+  const navigate = useNavigate();
 
-  const fetchFoods = async () => {
-    try {
-      const response = await axios.get("http://localhost:4000/api/foods", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      setFoods(response.data);
-    } catch (error) {
-      console.error("Error fetching foods:", error);
-      toast.error(error.response.data.message);
-    }
-  };
+  const token = localStorage.getItem("token");
+  useAuth(token);
 
   useEffect(() => {
-    fetchFoods();
-  }, [token, setFoods]);
+    const fetchFoods = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) {
+          throw new Error("Token not found in local storage");
+        }
 
-  const handleAddFood = async (newFood) => {
-    try {
-      // Code to add new food item to state or perform necessary actions
-      setFoods([...foods, newFood]);
-    } catch (error) {
-      toast.success(`Error adding food:, ${error}`, {
-        position: "top-center",
-      });
-    }
-  };
+        const response = await axios.get("http://localhost:4000/api/foods", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        setFoods(response.data);
+      } catch (error) {
+        console.error("Error fetching foods:", error);
+        toast.error("Failed to fetch foods");
+      }
+    };
+
+    fetchFoods();
+  }, []);
 
   const handleDelete = async (foodId) => {
     try {
@@ -52,7 +44,7 @@ const Dashboard = ({ isLoggedIn }) => {
         },
       });
       setFoods(foods.filter((food) => food._id !== foodId));
-      toast.success("Food item deleted successfully", {
+      toast.success("Food item removed successfully", {
         position: "top-center",
       });
     } catch (error) {
@@ -62,152 +54,150 @@ const Dashboard = ({ isLoggedIn }) => {
   };
 
   const handleEdit = (foodId) => {
-    const foodToEdit = foods.find((food) => food._id === foodId);
-    if (foodToEdit) {
-      setEditingFood(foodToEdit);
-    } else {
-      toast.error("Food item not found for editing");
-    }
+    navigate(`/edit/${foodId}`);
   };
 
-  const handleUpdateFood = async (updatedFood) => {
-    try {
-      setIsLoading(true);
-      const response = await axios.put(
-        `http://localhost:4000/api/foods/${updatedFood._id}`,
-        // updatedFood,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-      const updatedFoods = foods.map((food) =>
-        food._id === updatedFood._id ? response.data.food : food
-      );
-      setFoods(updatedFoods);
-      toast.success("Food item updated successfully", {
-        position: "top-center",
-      });
-      setEditingFood(null); // Clear editing state
-    } catch (error) {
-      console.error("Error updating food item:", error);
-      toast.error(error.response.data.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingFood(null); // Clear editing state
-  };
-
-  // Function to format createdAt date string
   const formatDate = (createdAt) => {
     const date = new Date(createdAt);
-    const formattedDate = date.toLocaleString("en-US", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    return formattedDate;
+    return date.toLocaleString();
   };
+
+  useEffect(() => {
+    let newChartInstance = null;
+
+    const prepareChartData = () => {
+      const labels = foods.map((food) => food.title);
+      const data = foods.map((food) => food.quantity);
+
+      return {
+        labels,
+        datasets: [
+          {
+            label: "Inventory Levels",
+            data,
+            backgroundColor: "rgba(54, 162, 235, 0.6)",
+          },
+        ],
+      };
+    };
+
+    const options = {
+      scales: {
+        y: {
+          type: "linear",
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: "Quantity",
+          },
+        },
+      },
+    };
+
+    if (chartRef.current) {
+      // Destroy previous chart instance
+      if (chartRef.current.chartInstance) {
+        chartRef.current.chartInstance.destroy();
+      }
+
+      // Render new chart
+      newChartInstance = new Chart(chartRef.current, {
+        type: "bar",
+        data: prepareChartData(),
+        options: options,
+      });
+
+      // Update chartRef with the new chart instance
+      chartRef.current.chartInstance = newChartInstance;
+    }
+
+    return () => {
+      // Cleanup: Destroy chart instance on component unmount
+      if (newChartInstance) {
+        newChartInstance.destroy();
+      }
+    };
+  }, [foods]);
 
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="py-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
-          {foods.length > 0 ? (
-            <>
-              <h1 className="text-3xl font-bold text-gray-900 mb-6">
-                Dashboard
-              </h1>
-              <div className="overflow-hidden border border-gray-200 rounded-lg">
-                <table className="min-w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Id
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Image
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Create At
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Description
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  {isLoading ? (
-                    <p>Loading....</p>
-                  ) : (
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {foods.map((food) => (
-                        <tr key={food._id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {food._id}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <img
-                              src={food.image}
-                              alt={food.title}
-                              className="h-12 w-12 rounded-full object-cover"
-                            />
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {formatDate(food.createdAt)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {food.title}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {food.description}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button
-                              className="text-white hover:text-orange-400 bg-blue-400 focus:outline-none"
-                              onClick={() => handleEdit(food._id)}
-                            >
-                              <FontAwesomeIcon icon={faEdit} />
-                            </button>
-                            <button
-                              className="text-red-600 hover:text-red-900 ml-2 bg-blue-400 focus:outline-none"
-                              onClick={() => handleDelete(food._id)}
-                            >
-                              <FontAwesomeIcon icon={faTrash} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  )}
-                </table>
-              </div>
-            </>
-          ) : (
-            <h1 className="text-3xl font-bold text-gray-900 mb-6">
-              No items, start adding items
-            </h1>
-          )}
-          {editingFood ? (
-            <AddFoodForm
-              initialData={editingFood} // Pass existing food data as initialData
-              onUpdate={handleUpdateFood} // Use onUpdate to handle update action
-              onCancelEdit={handleCancelEdit}
-            />
-          ) : (
-            <AddFoodForm onAdd={handleAddFood} /> // Use onAdd to handle adding new food
-          )}
+          <h1 className="text-3xl font-bold text-gray-900 mb-6">Dashboard</h1>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {foods.length === 0 ? (
+              <p className="text-center text-gray-500">
+                There's no item to show. Start adding new items to the list.
+              </p>
+            ) : (
+              foods.map((food) => (
+                <div
+                  key={food._id}
+                  className="rounded-lg overflow-hidden shadow-md"
+                >
+                  <img
+                    className="w-full h-48 object-cover"
+                    alt={food.title}
+                    src={`https://source.unsplash.com/300x200/?food,${food.title}`}
+                  />
+                  <div className="px-4 py-4">
+                    <h2 className="text-lg font-semibold text-gray-900 mb-2">
+                      {food.title}
+                    </h2>
+                    <p className="text-gray-700">{food.description}</p>
+                    <div className="flex justify-between items-center mt-4">
+                      <p className={`text-sm font-medium ${
+                        food.quantity < 10 ? 'text-red-500 font-bold' : 'text-green-500'
+                      }`}>
+                        Inventory: {food.quantity} units
+                        <span className="ml-2">
+                          {food.quantity < 10 ? 'Low Stock' : 'In Stock'}
+                        </span>
+                      </p>
+                      <div className="flex">
+                        <button
+                          onClick={() => handleEdit(food._id)}
+                          className="hover:text-blue-700 focus:outline-none bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(food._id)}
+                          className="text-red-500 hover:text-red-700 focus:outline-none bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold mr-2 mb-2"
+
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Created at {formatDate(food.createdAt)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Chart */}
+          <div className="mt-8">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">
+              Inventory Levels
+            </h2>
+            <canvas
+              ref={chartRef}
+              style={{ maxWidth: "100%", height: "auto" }}
+            ></canvas>
+          </div>
+
+          <div className="flex justify-end mt-6">
+            <button
+              onClick={() => navigate("/add")}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none"
+            >
+              Add New Item
+            </button>
+          </div>
         </div>
       </div>
     </div>
